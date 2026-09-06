@@ -1,0 +1,1540 @@
+import { EnemyData, Phase, Stats, UIState, Interactable, Language, Decoration, AmbientNPC, Zone } from './types';
+import { MAP_WIDTH, MAP_HEIGHT, MAP_COLS, MAP_ROWS, TILE_SIZE, SHELVES, INTERACTABLES, DECORATIONS, AMBIENT_NPCS, ZONES } from './data';
+import { TRANSLATIONS } from './i18n';
+
+// --- LUXURY RENDERING HELPERS FOR IMPERIAL GRAND ARCHIVE ---
+
+/** Draw character sprite with isometric depth, walking animation, and wing-specific outfits */
+const drawUprightCharacter = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  facing: string,
+  isMoving: boolean,
+  time: number,
+  type: 'hero' | 'npc' | 'ambient',
+  color: string,
+  icon?: string,
+  customState?: string
+) => {
+  ctx.save();
+  ctx.translate(x, y); // Base of character's feet
+
+  const bounce = isMoving ? Math.abs(Math.sin(time * 12)) * 2.5 : 0;
+  const legSwing = isMoving ? Math.sin(time * 12) * 5 : 0;
+
+  // Hero Magical Aura Ring
+  if (type === 'hero') {
+    ctx.save();
+    const auraPulse = Math.sin(time * 4) * 2;
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 14 + auraPulse, 7 + auraPulse * 0.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // HD-2D Volumetric Directional Shadow
+  ctx.save();
+  ctx.fillStyle = 'rgba(5, 10, 20, 0.5)';
+  ctx.beginPath();
+  // Angled long shadow projection to the top-right
+  ctx.moveTo(-11, 0);
+  ctx.lineTo(11, 0);
+  ctx.lineTo(25, -20);
+  ctx.lineTo(3, -20);
+  ctx.fill();
+  
+  // Ambient occlusion ground contact shadow
+  ctx.fillStyle = 'rgba(0, 0, 5, 0.7)';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 11, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.translate(0, -bounce);
+
+  // Legs & Boots
+  ctx.fillStyle = '#0f172a';
+  if (facing === 'left' || facing === 'right') {
+    ctx.beginPath(); ctx.ellipse(-legSwing, -5, 3.5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(legSwing, -5, 3.5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#451a03'; // Boot tip
+    ctx.fillRect(-legSwing - 3, -2, 5, 2.5);
+    ctx.fillRect(legSwing - 3, -2, 5, 2.5);
+  } else {
+    ctx.beginPath(); ctx.ellipse(-4, -5 + legSwing, 3.5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(4, -5 - legSwing, 3.5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#451a03'; // Boot tips
+    ctx.fillRect(-6, -2 + legSwing, 4.5, 2.5);
+    ctx.fillRect(2, -2 - legSwing, 4.5, 2.5);
+  }
+
+  // Torso / Body Base
+  const bodyHeight = 16;
+  const bodyWidth = 13;
+  const bodyY = -7;
+
+  // Rich Gradient Coat / Robe
+  const bodyGrad = ctx.createLinearGradient(0, bodyY - bodyHeight, 0, bodyY);
+  bodyGrad.addColorStop(0, color);
+  bodyGrad.addColorStop(1, '#090d16');
+  ctx.fillStyle = bodyGrad;
+
+  ctx.beginPath();
+  ctx.moveTo(-bodyWidth / 2 + 1, bodyY - bodyHeight);
+  ctx.quadraticCurveTo(0, bodyY - bodyHeight - 2, bodyWidth / 2 - 1, bodyY - bodyHeight);
+  ctx.lineTo(bodyWidth / 2 + (isMoving ? 1 : 0), bodyY);
+  ctx.lineTo(-bodyWidth / 2 - (isMoving ? 1 : 0), bodyY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Ornate Trims & Back Accessories
+  if (type === 'hero') {
+    // Flowing Crimson & Gold Grand Librarian Mantle
+    ctx.fillStyle = '#991b1b';
+    ctx.beginPath();
+    const capeWiggle = isMoving ? Math.sin(time * 12) * 3 : Math.sin(time * 3) * 1.5;
+    ctx.moveTo(-bodyWidth / 2 - 2, bodyY - bodyHeight + 3);
+    ctx.lineTo(-bodyWidth / 2 - 3 + capeWiggle, bodyY);
+    ctx.lineTo(bodyWidth / 2 + 3 + capeWiggle, bodyY);
+    ctx.lineTo(bodyWidth / 2 + 2, bodyY - bodyHeight + 3);
+    ctx.closePath();
+    ctx.fill();
+
+    // Gold Sash & Brass Brooch
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-bodyWidth / 2, bodyY - 7);
+    ctx.lineTo(bodyWidth / 2, bodyY - 7);
+    ctx.stroke();
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(0, bodyY - bodyHeight + 4, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (icon === 'king') {
+    // Royal Ermine Collar with gold breastplate
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(-bodyWidth / 2 - 1, bodyY - bodyHeight + 1, bodyWidth + 2, 4);
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(-3, bodyY - bodyHeight + 2.5, 1.5, 1.5);
+    ctx.fillRect(1.5, bodyY - bodyHeight + 2.5, 1.5, 1.5);
+    ctx.fillStyle = '#eab308';
+    ctx.fillRect(-bodyWidth / 2, bodyY - bodyHeight + 5, bodyWidth, 4);
+  } else if (icon === 'warrior') {
+    // Sword Master Pauldron & Leather Bracers
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillRect(-bodyWidth / 2 - 2, bodyY - bodyHeight + 2, 4, 5);
+    ctx.fillRect(bodyWidth / 2 - 2, bodyY - bodyHeight + 2, 4, 5);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-6, bodyY - 2); ctx.lineTo(-11, bodyY - 14); ctx.stroke(); // Rapier sheathed
+  } else if (icon === 'mage') {
+    // Floating Staff
+    const staffY = bodyY - bodyHeight - 3 + Math.sin(time * 3) * 2;
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(9, staffY + 18); ctx.lineTo(9, staffY - 8); ctx.stroke();
+    // Staff Gem Pulse
+    ctx.fillStyle = '#38bdf8';
+    ctx.shadowColor = '#38bdf8';
+    ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(9, staffY - 9, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  } else if (icon === 'scout') {
+    // Wind Dancer Scarf
+    ctx.fillStyle = '#059669';
+    ctx.fillRect(-bodyWidth / 2 - 1, bodyY - bodyHeight + 2, bodyWidth + 2, 3);
+  } else if (icon === 'alchemist') {
+    // Apron with glass vials
+    ctx.fillStyle = '#b45309';
+    ctx.fillRect(-4, bodyY - bodyHeight + 4, 8, 9);
+    ctx.fillStyle = '#10b981'; ctx.fillRect(-3, bodyY - bodyHeight + 6, 2, 3);
+    ctx.fillStyle = '#ef4444'; ctx.fillRect(1, bodyY - bodyHeight + 6, 2, 3);
+  } else if (icon === 'mystic') {
+    // Rune Aura Shroud
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, bodyY - bodyHeight / 2, 13, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Head & Hair
+  const headY = bodyY - bodyHeight - 6;
+  const headRadius = 6.5;
+
+  // Face Skin
+  ctx.fillStyle = '#fef08a';
+  ctx.beginPath();
+  ctx.arc(0, headY, headRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Headwear / Hair
+  if (type === 'hero') {
+    ctx.fillStyle = '#1e293b'; // Neat scholarly dark hair
+    ctx.beginPath(); ctx.arc(0, headY - 1, headRadius + 0.5, Math.PI, 0); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-headRadius - 0.5, headY - 1); ctx.lineTo(-headRadius - 2, headY + 4); ctx.lineTo(-headRadius + 1, headY - 1); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(headRadius + 0.5, headY - 1); ctx.lineTo(headRadius + 2, headY + 4); ctx.lineTo(headRadius - 1, headY - 1); ctx.fill();
+  } else if (icon === 'king') {
+    // Golden Royal Crown with Rubies
+    ctx.fillStyle = '#eab308';
+    ctx.beginPath();
+    ctx.moveTo(-7, headY - 3); ctx.lineTo(-8, headY - 12); ctx.lineTo(-3, headY - 6);
+    ctx.lineTo(0, headY - 13); ctx.lineTo(3, headY - 6); ctx.lineTo(8, headY - 12);
+    ctx.lineTo(7, headY - 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#dc2626';
+    ctx.beginPath(); ctx.arc(0, headY - 8.5, 1.5, 0, Math.PI * 2); ctx.fill();
+  } else if (icon === 'mage') {
+    // Pointed Wizard Hat
+    ctx.fillStyle = '#1e1b4b';
+    ctx.beginPath();
+    ctx.moveTo(-9, headY - 2); ctx.lineTo(9, headY - 2); ctx.lineTo(2, headY - 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(-6, headY - 5, 12, 2.5);
+  } else if (icon === 'warrior') {
+    // Veteran Headband
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(-headRadius - 0.5, headY - 4, headRadius * 2 + 1, 3);
+  } else if (icon === 'scout') {
+    // Cowl
+    ctx.fillStyle = '#065f46';
+    ctx.beginPath(); ctx.arc(0, headY, headRadius + 0.5, 0, Math.PI); ctx.fill();
+  } else if (icon === 'alchemist') {
+    // Monocle
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(2.5, headY + 0.5, 2.5, 0, Math.PI * 2); ctx.stroke();
+  } else if (icon === 'mystic') {
+    // Hood
+    ctx.fillStyle = '#3b0764';
+    ctx.beginPath();
+    ctx.moveTo(-8, headY + 2); ctx.lineTo(-7, headY - 10); ctx.lineTo(7, headY - 10); ctx.lineTo(8, headY + 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Eyes
+  ctx.fillStyle = '#0f172a';
+  if (facing === 'down') {
+    ctx.beginPath(); ctx.arc(-2.5, headY + 0.5, 1.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(2.5, headY + 0.5, 1.2, 0, Math.PI * 2); ctx.fill();
+  } else if (facing === 'left') {
+    ctx.beginPath(); ctx.arc(-3.5, headY + 0.5, 1.2, 0, Math.PI * 2); ctx.fill();
+  } else if (facing === 'right') {
+    ctx.beginPath(); ctx.arc(3.5, headY + 0.5, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Ambient Scholar Thought / Animation Bubble
+  if (customState === 'scholar_reading') {
+    const bubbleBob = Math.sin(time * 2 + x) * 1.5;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.beginPath();
+    ctx.roundRect(6, headY - 16 + bubbleBob, 16, 11, 3);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 8px sans-serif';
+    ctx.fillText('📖', 8, headY - 7 + bubbleBob);
+  }
+
+  ctx.restore();
+};
+
+/** Draw Floating Glowing Ancient Tome with Runic Circles & Page Curl */
+const drawFloatingBook = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+  time: number,
+  name?: string
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+
+  const floatY = Math.sin(time * 3 + x) * 4 - 10;
+  const rotate = Math.sin(time * 1.5 + y) * 0.08;
+
+  // Ground Magic Sigil Shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Floating Tome
+  ctx.translate(0, floatY);
+  ctx.rotate(rotate);
+
+  // Rotating Runic Aura Ring
+  ctx.save();
+  ctx.rotate(time * 0.8);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 2]);
+  ctx.beginPath();
+  ctx.arc(0, 0, 13, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Tome Glow
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10 + Math.sin(time * 4) * 4;
+
+  // Book Binding
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 1.5;
+
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.lineTo(-11, -2);
+  ctx.lineTo(-9, -13);
+  ctx.lineTo(0, -6);
+  ctx.lineTo(9, -13);
+  ctx.lineTo(11, -2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Central Spine Divider
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.lineTo(0, -6);
+  ctx.stroke();
+
+  // Open Parchment Pages
+  ctx.fillStyle = '#fefce8';
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.moveTo(0, 5);
+  ctx.lineTo(-9, -1);
+  ctx.lineTo(-7.5, -11);
+  ctx.lineTo(0, -6);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(0, 5);
+  ctx.lineTo(9, -1);
+  ctx.lineTo(7.5, -11);
+  ctx.lineTo(0, -6);
+  ctx.fill();
+
+  // Gold Arcane Runes on Pages
+  ctx.fillStyle = '#b45309';
+  ctx.fillRect(-6, -6, 4, 1);
+  ctx.fillRect(-6, -3, 3, 1);
+  ctx.fillRect(2, -6, 4, 1);
+  ctx.fillRect(2, -3, 3, 1);
+
+  ctx.restore();
+
+  // Floating Title Banner
+  if (name) {
+    ctx.save();
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    const textWidth = ctx.measureText(name).width;
+    ctx.beginPath();
+    ctx.roundRect(x - textWidth / 2 - 4, y + floatY - 22, textWidth + 8, 14, 3);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(name, x, y + floatY - 12);
+    ctx.restore();
+  }
+};
+
+/** Draw Towering 3D Grand Archive Bookcases with Realistic Depth and Books */
+const drawTallGrandShelf = (ctx: CanvasRenderingContext2D, s: any) => {
+  const shelfHeight = 68;
+  const basex = s.x;
+  const basey = s.y + s.h;
+  const topy = basey - shelfHeight;
+
+  // Dark Ground Shadow
+  ctx.fillStyle = 'rgba(5, 10, 25, 0.65)';
+  ctx.beginPath();
+  ctx.moveTo(basex, basey);
+  ctx.lineTo(basex + s.w, basey);
+  ctx.lineTo(basex + s.w + 16, basey - 16);
+  ctx.lineTo(basex + 16, basey - 16);
+  ctx.fill();
+
+  // Wood Backing with Wing Tone
+  const grad = ctx.createLinearGradient(basex, topy, basex, basey);
+  if (s.style === 'sword') {
+    grad.addColorStop(0, '#451a03'); grad.addColorStop(1, '#1c100a');
+  } else if (s.style === 'magic') {
+    grad.addColorStop(0, '#1e1b4b'); grad.addColorStop(1, '#09081f');
+  } else if (s.style === 'agility') {
+    grad.addColorStop(0, '#064e3b'); grad.addColorStop(1, '#022c22');
+  } else if (s.style === 'alchemy') {
+    grad.addColorStop(0, '#78350f'); grad.addColorStop(1, '#291004');
+  } else if (s.style === 'forbidden') {
+    grad.addColorStop(0, '#3b0764'); grad.addColorStop(1, '#110321');
+  } else {
+    grad.addColorStop(0, '#382518'); grad.addColorStop(1, '#1a0e08');
+  }
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(basex, topy, s.w, shelfHeight);
+
+  // Deterministic PRNG for Book generation on shelves
+  let prng = (s.x * 19 + s.y * 31) % 2147483647;
+  const nextRand = () => {
+    prng = (prng * 16807) % 2147483647;
+    return (prng - 1) / 2147483646;
+  };
+
+  // 3 Tiers of Bookshelves
+  for (let row = 0; row < 3; row++) {
+    const shelfY = topy + 18 + row * 18;
+    let bx = basex + 6;
+
+    while (bx < basex + s.w - 8) {
+      if (nextRand() > 0.75) {
+        bx += 7; // Space/Gap between book groups
+        continue;
+      }
+
+      const bw = 3 + Math.floor(nextRand() * 4);
+      const bh = 8 + Math.floor(nextRand() * 6);
+
+      const colors = s.style === 'magic'
+        ? ['#1d4ed8', '#4338ca', '#6d28d9', '#0284c7', '#0f172a']
+        : s.style === 'sword'
+        ? ['#991b1b', '#b91c1c', '#7f1d1d', '#854d0e', '#1e293b']
+        : s.style === 'agility'
+        ? ['#047857', '#059669', '#065f46', '#0284c7', '#1e293b']
+        : ['#7c2d12', '#b45309', '#1e3a8a', '#14532d', '#581c87', '#0f172a'];
+
+      ctx.fillStyle = colors[Math.floor(nextRand() * colors.length)];
+
+      const lean = (nextRand() - 0.5) * 0.25;
+      ctx.save();
+      ctx.translate(bx + bw / 2, shelfY);
+      ctx.rotate(lean);
+      ctx.fillRect(-bw / 2, -bh, bw, bh);
+
+      // Gold Embossed Spine Trim
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.85)';
+      if (nextRand() > 0.4) {
+        ctx.fillRect(-bw / 2 + 0.5, -bh + 1.5, bw - 1, 1.5);
+      }
+      ctx.restore();
+
+      bx += bw + 1;
+    }
+
+    // Wooden Shelf Plank
+    ctx.fillStyle = '#5c3a21';
+    ctx.fillRect(basex, shelfY, s.w, 3.5);
+    ctx.fillStyle = '#2e180d';
+    ctx.fillRect(basex, shelfY + 3.5, s.w, 2);
+  }
+
+  // Vertical Outer Wooden Pillars
+  ctx.fillStyle = '#5c3a21';
+  ctx.fillRect(basex, topy, 6, shelfHeight);
+  ctx.fillRect(basex + s.w - 6, topy, 6, shelfHeight);
+
+  // Ornate Top Header Crown with Brass Plaque
+  ctx.fillStyle = '#784628';
+  ctx.fillRect(basex - 3, topy - 7, s.w + 6, 11);
+  ctx.fillStyle = '#a16207';
+  ctx.fillRect(basex - 1, topy - 5, s.w + 2, 2);
+
+  // Shelf Header Crest / Emblem
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  ctx.arc(basex + s.w / 2, topy - 2, 4, 0, Math.PI * 2);
+  ctx.fill();
+};
+
+/** Draw Rich Decorations (Reading Desks with Lamps, Pillars, Fountains, Statues) */
+const drawDecoration = (ctx: CanvasRenderingContext2D, dec: Decoration, time: number) => {
+  if (dec.type === 'pillar') {
+    // Corinthian Fluted Marble Pillar
+    const px = dec.x;
+    const py = dec.y;
+    const height = 60;
+
+    // Pillar Shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(px + 12, py + 12, 14, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Column Base
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(px, py + 5, 24, 10);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(px + 2, py + 7, 20, 8);
+
+    // Fluted Column Shaft
+    const shaftGrad = ctx.createLinearGradient(px, py - height, px + 24, py - height);
+    shaftGrad.addColorStop(0, '#cbd5e1');
+    shaftGrad.addColorStop(0.5, '#f8fafc');
+    shaftGrad.addColorStop(1, '#94a3b8');
+    ctx.fillStyle = shaftGrad;
+    ctx.fillRect(px + 3, py - height, 18, height + 5);
+
+    // Fluted Vertical Grooves
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(px + 7, py - height, 1.5, height + 5);
+    ctx.fillRect(px + 12, py - height, 1.5, height + 5);
+    ctx.fillRect(px + 17, py - height, 1.5, height + 5);
+
+    // Gold Leaf Corinthian Capital
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(px, py - height - 6, 24, 7);
+    ctx.fillStyle = '#d97706';
+    ctx.fillRect(px + 2, py - height - 4, 20, 3);
+  } else if (dec.type === 'desk') {
+    // Long Polished Mahogany Reading Table with Green Banker Lamp
+    const dx = dec.x;
+    const dy = dec.y;
+
+    // Desk Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(dx + 2, dy + dec.h - 3, dec.w, 7);
+
+    // Mahogany Tabletop
+    const tableGrad = ctx.createLinearGradient(dx, dy, dx, dy + dec.h);
+    tableGrad.addColorStop(0, '#78350f');
+    tableGrad.addColorStop(1, '#451a03');
+    ctx.fillStyle = tableGrad;
+    ctx.fillRect(dx, dy, dec.w, dec.h);
+
+    // Green Velvet Center Blotter / Runner
+    ctx.fillStyle = '#065f46';
+    ctx.fillRect(dx + 6, dy + 3, dec.w - 12, dec.h - 6);
+
+    // Open Manuscript Parchment
+    ctx.fillStyle = '#fefce8';
+    ctx.fillRect(dx + 12, dy + 5, 15, 10);
+    ctx.fillStyle = '#713f12';
+    ctx.fillRect(dx + 14, dy + 7, 11, 1);
+    ctx.fillRect(dx + 14, dy + 9, 9, 1);
+    ctx.fillRect(dx + 14, dy + 11, 10, 1);
+
+    // Brass Green Banker Lamp
+    const lampX = dx + dec.w - 14;
+    const lampY = dy + 8;
+
+    // Lamp Base
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(lampX - 2, lampY + 2, 4, 2);
+    ctx.fillRect(lampX - 0.5, lampY - 3, 1, 5);
+
+    // Green Emerald Lamp Hood
+    ctx.fillStyle = '#059669';
+    ctx.beginPath();
+    ctx.ellipse(lampX, lampY - 3, 5, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Warm Local Lamp Glow
+    ctx.fillStyle = 'rgba(253, 224, 71, 0.2)';
+    ctx.beginPath();
+    ctx.arc(lampX, lampY, 16, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (dec.type === 'fountain') {
+    // Central Fountain of Wisdom & Floating Celestial Crystal
+    const fx = dec.x + dec.w / 2;
+    const fy = dec.y + dec.h / 2;
+
+    // Outer Marble Basin
+    ctx.fillStyle = '#cbd5e1';
+    ctx.beginPath(); ctx.arc(fx, fy, 28, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#94a3b8';
+    ctx.beginPath(); ctx.arc(fx, fy, 24, 0, Math.PI * 2); ctx.fill();
+
+    // Rippling Crystalline Blue Water
+    const waterGrad = ctx.createRadialGradient(fx, fy, 3, fx, fy, 23);
+    waterGrad.addColorStop(0, '#7dd3fc');
+    waterGrad.addColorStop(0.7, '#0284c7');
+    waterGrad.addColorStop(1, '#0369a1');
+    ctx.fillStyle = waterGrad;
+    ctx.beginPath(); ctx.arc(fx, fy, 22, 0, Math.PI * 2); ctx.fill();
+
+    // Animated Water Ripples
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    const rippleRadius = (time * 8) % 20;
+    ctx.beginPath(); ctx.arc(fx, fy, rippleRadius, 0, Math.PI * 2); ctx.stroke();
+
+    // Center Pedestal
+    ctx.fillStyle = '#e2e8f0';
+    ctx.beginPath(); ctx.arc(fx, fy, 8, 0, Math.PI * 2); ctx.fill();
+
+    // Hovering Mana Monolith Crystal
+    const crystalFloat = Math.sin(time * 3) * 3 - 10;
+    ctx.save();
+    ctx.translate(fx, fy + crystalFloat);
+
+    ctx.shadowColor = '#38bdf8';
+    ctx.shadowBlur = 15 + Math.sin(time * 5) * 5;
+    ctx.fillStyle = '#38bdf8';
+
+    ctx.beginPath();
+    ctx.moveTo(0, -11); ctx.lineTo(6, 0); ctx.lineTo(0, 11); ctx.lineTo(-6, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#bae6fd';
+    ctx.beginPath();
+    ctx.moveTo(0, -11); ctx.lineTo(2.5, 0); ctx.lineTo(0, 11); ctx.lineTo(-2.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  } else if (dec.type === 'globe') {
+    // Celestial Orrery / Astrological Rotating Globe
+    const gx = dec.x + 12;
+    const gy = dec.y + 12;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(gx, gy + 8, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Stand
+    ctx.fillStyle = '#92400e';
+    ctx.fillRect(gx - 2, gy, 4, 8);
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath(); ctx.arc(gx, gy + 8, 6, 0, Math.PI * 2); ctx.fill();
+
+    // Rotating Armillary Brass Rings
+    ctx.save();
+    ctx.translate(gx, gy - 3);
+    ctx.rotate(time * 0.7);
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(0, 0, 8, 3.5, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, 0, 3.5, 8, 0, 0, Math.PI * 2); ctx.stroke();
+
+    // Central Sphere
+    ctx.fillStyle = '#3b82f6';
+    ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (dec.type === 'weapon_rack') {
+    // Weapon Rack with Swords & Halberds
+    const wx = dec.x;
+    const wy = dec.y;
+    ctx.fillStyle = '#451a03';
+    ctx.fillRect(wx, wy, dec.w, 5);
+    ctx.fillRect(wx + 2, wy - 15, 3, 18);
+    ctx.fillRect(wx + dec.w - 5, wy - 15, 3, 18);
+    ctx.fillRect(wx, wy - 12, dec.w, 3);
+
+    // Gleaming Swords
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(wx + 8, wy - 16); ctx.lineTo(wx + 8, wy + 1);
+    ctx.moveTo(wx + 18, wy - 16); ctx.lineTo(wx + 18, wy + 1);
+    ctx.moveTo(wx + 28, wy - 16); ctx.lineTo(wx + 28, wy + 1);
+    ctx.stroke();
+
+    // Brass Pommels
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(wx + 8, wy - 16, 1.5, 0, Math.PI * 2);
+    ctx.arc(wx + 18, wy - 16, 1.5, 0, Math.PI * 2);
+    ctx.arc(wx + 28, wy - 16, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (dec.type === 'alchemy_bench') {
+    // Alchemy Bench with Bubbling Glass Flasks & Retorts
+    const ax = dec.x;
+    const ay = dec.y;
+
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(ax, ay, dec.w, dec.h);
+    ctx.fillStyle = '#291004';
+    ctx.fillRect(ax, ay + dec.h - 3, dec.w, 3);
+
+    // Bubbling Alembic Flask
+    const flaskX = ax + 12;
+    const flaskY = ay + 8;
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath(); ctx.arc(flaskX, flaskY, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(flaskX - 1, flaskY - 7, 2, 4);
+
+    // Glass Retort with Purple Liquid
+    const retortX = ax + dec.w - 15;
+    const retortY = ay + 8;
+    ctx.fillStyle = '#a855f7';
+    ctx.beginPath(); ctx.arc(retortX, retortY, 5, 0, Math.PI * 2); ctx.fill();
+  } else if (dec.type === 'statue') {
+    // Ancient Sage/Saint Marble Statue
+    const sx = dec.x + 12;
+    const sy = dec.y + 20;
+
+    // Statue Plinth
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(dec.x, dec.y + 10, 24, 15);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(dec.x + 2, dec.y + 12, 20, 11);
+
+    // Plaque
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(dec.x + 5, dec.y + 16, 14, 4);
+
+    // Carved Figure
+    ctx.fillStyle = '#e2e8f0';
+    ctx.beginPath();
+    ctx.arc(sx, sy - 20, 5, 0, Math.PI * 2); // Head
+    ctx.fill();
+    ctx.fillRect(sx - 5, sy - 15, 10, 13); // Body
+  }
+};
+
+export class GameEngine {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  onSyncUI: (state: UIState) => void;
+  onTriggerDialogue: (id: string) => void;
+  onEndGame: (type: 'victory' | 'defeat' | 'tobecontinued') => void;
+
+  phase: Phase = 'explore';
+  day: number = 1;
+  maxDays: number = 30;
+  language: Language = 'ko';
+
+  player = {
+    x: 30 * TILE_SIZE, // Starts in the open grand rotunda aisle
+    y: 25.5 * TILE_SIZE,
+    radius: 10,
+    facing: 'down',
+    color: '#3b82f6',
+    cooldown: 0,
+    skills: [] as string[],
+    stats: {
+      hp: 100,
+      maxHp: 100,
+      str: 10,
+      mag: 10,
+      agi: 160
+    }
+  };
+
+  interactables: Interactable[] = [...INTERACTABLES];
+  enemies: EnemyData[] = [];
+  projectiles: any[] = [];
+  particles: any[] = [];
+  ambientDust: { x: number; y: number; vx: number; vy: number; size: number; alpha: number }[] = [];
+
+  lastTime: number = 0;
+  isPaused: boolean = false;
+  currentZoneId: string = 'rotunda';
+  zoneBannerTimer: number = 3.0; // Show zone banner on spawn
+
+  // Touch / Virtual Controls
+  joystick = {
+    active: false,
+    id: -1,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+    dx: 0,
+    dy: 0
+  };
+
+  actionBtn = {
+    active: false,
+    id: -1
+  };
+
+  resizeObserver: ResizeObserver | null = null;
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    onSyncUI: (state: UIState) => void,
+    onTriggerDialogue: (id: string) => void,
+    onEndGame: (type: 'victory' | 'defeat' | 'tobecontinued') => void,
+    language: Language = 'ko'
+  ) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d')!;
+    this.onSyncUI = onSyncUI;
+    this.onTriggerDialogue = onTriggerDialogue;
+    this.onEndGame = onEndGame;
+    this.language = language;
+
+    // Seed Ambient Floating Golden Dust Motes
+    for (let i = 0; i < 80; i++) {
+      this.ambientDust.push({
+        x: Math.random() * MAP_WIDTH,
+        y: Math.random() * MAP_HEIGHT,
+        vx: (Math.random() - 0.5) * 8,
+        vy: (Math.random() - 0.5) * 6 - 4,
+        size: 1.5 + Math.random() * 2.5,
+        alpha: 0.2 + Math.random() * 0.6
+      });
+    }
+
+    this.init();
+  }
+
+  init = () => {
+    this.handleResize();
+    this.bindEvents();
+    this.syncUI();
+    this.lastTime = performance.now();
+    requestAnimationFrame(this.loop);
+  };
+
+  handleResize = () => {
+    if (!this.canvas) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.max(320, Math.floor(rect.width || window.innerWidth));
+    const height = Math.max(240, Math.floor(rect.height || window.innerHeight));
+
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+    }
+  };
+
+  bindEvents = () => {
+    window.addEventListener('resize', this.handleResize);
+    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('keyup', this.handleKeyUp);
+
+    if (this.canvas && typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.handleResize();
+      });
+      this.resizeObserver.observe(this.canvas);
+    }
+
+    // Touch & Pointer event bindings on canvas
+    this.canvas.addEventListener('touchstart', this.handleTouchStart, { passive: false });
+    this.canvas.addEventListener('touchmove', this.handleTouchMove, { passive: false });
+    this.canvas.addEventListener('touchend', this.handleTouchEnd, { passive: false });
+    this.canvas.addEventListener('touchcancel', this.handleTouchEnd, { passive: false });
+    this.canvas.addEventListener('mousedown', this.handleMouseDown);
+    window.addEventListener('mousemove', this.handleMouseMove);
+    window.addEventListener('mouseup', this.handleMouseUp);
+  };
+
+  destroy = () => {
+    window.removeEventListener('resize', this.handleResize);
+    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keyup', this.handleKeyUp);
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+    if (this.canvas) {
+      this.canvas.removeEventListener('touchstart', this.handleTouchStart);
+      this.canvas.removeEventListener('touchmove', this.handleTouchMove);
+      this.canvas.removeEventListener('touchend', this.handleTouchEnd);
+      this.canvas.removeEventListener('touchcancel', this.handleTouchEnd);
+      this.canvas.removeEventListener('mousedown', this.handleMouseDown);
+    }
+    window.removeEventListener('mousemove', this.handleMouseMove);
+    window.removeEventListener('mouseup', this.handleMouseUp);
+  };
+
+  getCanvasCoords = (clientX: number, clientY: number) => {
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+  };
+
+  handleTouchStart = (e: TouchEvent) => {
+    if (this.phase === 'dialogue') return;
+    e.preventDefault();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      const coords = this.getCanvasCoords(t.clientX, t.clientY);
+      this.handleInputStart(coords.x, coords.y, t.identifier);
+    }
+  };
+
+  handleTouchMove = (e: TouchEvent) => {
+    if (this.phase === 'dialogue') return;
+    e.preventDefault();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      const coords = this.getCanvasCoords(t.clientX, t.clientY);
+      this.handleInputMove(coords.x, coords.y, t.identifier);
+    }
+  };
+
+  handleTouchEnd = (e: TouchEvent) => {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      this.handleInputEnd(t.identifier);
+    }
+  };
+
+  handleMouseDown = (e: MouseEvent) => {
+    if (this.phase === 'dialogue') return;
+    const coords = this.getCanvasCoords(e.clientX, e.clientY);
+    this.handleInputStart(coords.x, coords.y, 9999);
+  };
+
+  handleMouseMove = (e: MouseEvent) => {
+    if (!this.joystick.active && !this.actionBtn.active) return;
+    const coords = this.getCanvasCoords(e.clientX, e.clientY);
+    this.handleInputMove(coords.x, coords.y, 9999);
+  };
+
+  handleMouseUp = () => {
+    this.handleInputEnd(9999);
+  };
+
+  // Keyboard Inputs
+  handleKeyDown = (e: KeyboardEvent) => {
+    if (this.phase === 'dialogue') {
+      if (e.key === ' ' || e.key === 'Enter' || e.key.toLowerCase() === 'z') {
+        // Dialogue advancement is managed by React UI
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') this.joystick.dy = -1;
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') this.joystick.dy = 1;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') this.joystick.dx = -1;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') this.joystick.dx = 1;
+
+    if (this.joystick.dx !== 0 || this.joystick.dy !== 0) {
+      if (Math.abs(this.joystick.dx) > Math.abs(this.joystick.dy)) {
+        this.player.facing = this.joystick.dx > 0 ? 'right' : 'left';
+      } else {
+        this.player.facing = this.joystick.dy > 0 ? 'down' : 'up';
+      }
+    }
+
+    if (e.key === ' ' || e.key === 'Enter' || e.key.toLowerCase() === 'z') {
+      this.triggerAction();
+    }
+  };
+
+  handleKeyUp = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+      if (this.joystick.dy === -1) this.joystick.dy = 0;
+    }
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+      if (this.joystick.dy === 1) this.joystick.dy = 0;
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+      if (this.joystick.dx === -1) this.joystick.dx = 0;
+    }
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+      if (this.joystick.dx === 1) this.joystick.dx = 0;
+    }
+  };
+
+  // Virtual Controls
+  handleInputStart = (x: number, y: number, id: number) => {
+    if (this.phase === 'dialogue') return;
+
+    if (x < this.canvas.width / 2) {
+      this.joystick.active = true;
+      this.joystick.id = id;
+      this.joystick.startX = x;
+      this.joystick.startY = y;
+      this.joystick.currentX = x;
+      this.joystick.currentY = y;
+      this.updateJoystickVector();
+    } else {
+      const btnRadius = 50;
+      const btnX = this.canvas.width - 80;
+      const btnY = this.canvas.height - 80;
+      const dist = Math.sqrt((x - btnX) ** 2 + (y - btnY) ** 2);
+      if (dist < btnRadius * 1.5) {
+        this.actionBtn.active = true;
+        this.actionBtn.id = id;
+        this.triggerAction();
+      }
+    }
+  };
+
+  handleInputMove = (x: number, y: number, id: number) => {
+    if (this.joystick.active && this.joystick.id === id) {
+      this.joystick.currentX = x;
+      this.joystick.currentY = y;
+      this.updateJoystickVector();
+    }
+  };
+
+  handleInputEnd = (id: number) => {
+    if (this.joystick.id === id) {
+      this.joystick.active = false;
+      this.joystick.id = -1;
+      this.joystick.dx = 0;
+      this.joystick.dy = 0;
+    }
+    if (this.actionBtn.id === id) {
+      this.actionBtn.active = false;
+      this.actionBtn.id = -1;
+    }
+  };
+
+  updateJoystickVector = () => {
+    let dx = this.joystick.currentX - this.joystick.startX;
+    let dy = this.joystick.currentY - this.joystick.startY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxRadius = 50;
+
+    if (dist > maxRadius) {
+      dx = (dx / dist) * maxRadius;
+      dy = (dy / dist) * maxRadius;
+    }
+
+    this.joystick.dx = dx / maxRadius;
+    this.joystick.dy = dy / maxRadius;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      this.player.facing = dx > 0 ? 'right' : 'left';
+    } else {
+      this.player.facing = dy > 0 ? 'down' : 'up';
+    }
+  };
+
+  triggerAction = () => {
+    if (this.phase === 'explore') {
+      const interactDist = 55;
+      let targetX = this.player.x;
+      let targetY = this.player.y;
+
+      if (this.player.facing === 'up') targetY -= 30;
+      if (this.player.facing === 'down') targetY += 30;
+      if (this.player.facing === 'left') targetX -= 30;
+      if (this.player.facing === 'right') targetX += 30;
+
+      let nearestObj: Interactable | null = null;
+      let minDist = Infinity;
+
+      for (const obj of this.interactables) {
+        const cx = obj.x + obj.width / 2;
+        const cy = obj.y + obj.height / 2;
+        const dx = cx - targetX;
+        const dy = cy - targetY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < interactDist && dist < minDist) {
+          minDist = dist;
+          nearestObj = obj;
+        }
+      }
+
+      if (nearestObj) {
+        this.onTriggerDialogue(nearestObj.id);
+      }
+    }
+  };
+
+  removeInteractable = (id: string) => {
+    this.interactables = this.interactables.filter(i => i.id !== id);
+  };
+
+  spawnParticles = (x: number, y: number, color: string) => {
+    for (let i = 0; i < 20; i++) {
+      this.particles.push({
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 120,
+        vy: (Math.random() - 0.5) * 120 - 20,
+        life: 1.0,
+        maxLife: 1.0,
+        color
+      });
+    }
+  };
+
+  setLanguage = (lang: Language) => {
+    this.language = lang;
+  };
+
+  syncUI = () => {
+    this.onSyncUI({
+      phase: this.phase,
+      stats: { ...this.player.stats },
+      day: this.day,
+      maxDays: this.maxDays,
+      currentZone: this.currentZoneId
+    });
+  };
+
+  checkCollision = (x: number, y: number, r: number) => {
+    if (x - r < 32 || x + r > MAP_WIDTH - 32 || y - r < 48 || y + r > MAP_HEIGHT - 32) return true;
+
+    // Shelves Collision
+    for (const s of SHELVES) {
+      if (x + r > s.x && x - r < s.x + s.w && y + r > s.y && y - r < s.y + s.h) {
+        return true;
+      }
+    }
+
+    // Pillars & Solid Furniture Collision
+    for (const d of DECORATIONS) {
+      if (d.type === 'pillar' || d.type === 'fountain' || d.type === 'statue') {
+        const cx = d.x + d.w / 2;
+        const cy = d.y + d.h / 2;
+        const dx = cx - x;
+        const dy = cy - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < r + d.w / 2) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  updateZone = (dt: number) => {
+    let foundZone = 'rotunda';
+    for (const z of ZONES) {
+      if (
+        this.player.x >= z.bounds.x1 &&
+        this.player.x <= z.bounds.x2 &&
+        this.player.y >= z.bounds.y1 &&
+        this.player.y <= z.bounds.y2
+      ) {
+        foundZone = z.id;
+        break;
+      }
+    }
+
+    if (foundZone !== this.currentZoneId) {
+      this.currentZoneId = foundZone;
+      this.zoneBannerTimer = 3.5;
+      this.syncUI();
+    } else if (this.zoneBannerTimer > 0) {
+      this.zoneBannerTimer -= dt;
+    }
+  };
+
+  // --- GAME LOOP ---
+  loop = (timestamp: number) => {
+    const dt = (timestamp - this.lastTime) / 1000;
+    this.lastTime = timestamp;
+
+    if (!this.isPaused) {
+      this.update(Math.min(dt, 0.1));
+    }
+    this.draw();
+
+    requestAnimationFrame(this.loop);
+  };
+
+  update = (dt: number) => {
+    if (this.phase === 'gameover' || this.phase === 'victory' || this.phase === 'tobecontinued') return;
+
+    // Player Movement
+    if (this.joystick.active || this.joystick.dx !== 0 || this.joystick.dy !== 0) {
+      const speed = Math.max(160, this.player.stats.agi);
+      const nx = this.player.x + this.joystick.dx * speed * dt;
+      const ny = this.player.y + this.joystick.dy * speed * dt;
+
+      if (!this.checkCollision(nx, this.player.y, this.player.radius)) {
+        this.player.x = nx;
+      }
+      if (!this.checkCollision(this.player.x, ny, this.player.radius)) {
+        this.player.y = ny;
+      }
+    }
+
+    this.updateZone(dt);
+
+    // Particles
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const pt = this.particles[i];
+      pt.life -= dt;
+      pt.x += pt.vx * dt;
+      pt.y += pt.vy * dt;
+      if (pt.life <= 0) this.particles.splice(i, 1);
+    }
+
+    // Ambient Dust Drift
+    for (const dust of this.ambientDust) {
+      dust.x += dust.vx * dt;
+      dust.y += dust.vy * dt;
+      if (dust.x < 0) dust.x = MAP_WIDTH;
+      if (dust.x > MAP_WIDTH) dust.x = 0;
+      if (dust.y < 0) dust.y = MAP_HEIGHT;
+      if (dust.y > MAP_HEIGHT) dust.y = 0;
+    }
+  };
+
+  // --- RENDERING PIPELINE ---
+  draw = () => {
+    const ctx = this.ctx;
+    const canvas = this.canvas;
+    const time = performance.now() / 1000;
+
+    // Ensure correct resolution matching client display
+    if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+      if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
+        canvas.width = canvas.clientWidth;
+        canvas.height = canvas.clientHeight;
+      }
+    }
+
+    const vw = canvas.width;
+    const vh = canvas.height;
+
+    ctx.fillStyle = '#060a12';
+    ctx.fillRect(0, 0, vw, vh);
+
+    // Camera Centering on Player with smooth bounded viewport
+    let cx = this.player.x - vw / 2;
+    let cy = this.player.y - vh / 2;
+
+    if (MAP_WIDTH <= vw) {
+      cx = (MAP_WIDTH - vw) / 2;
+    } else {
+      cx = Math.max(0, Math.min(MAP_WIDTH - vw, cx));
+    }
+
+    if (MAP_HEIGHT <= vh) {
+      cy = (MAP_HEIGHT - vh) / 2;
+    } else {
+      cy = Math.max(0, Math.min(MAP_HEIGHT - vh, cy));
+    }
+
+    ctx.save();
+    ctx.translate(-cx, -cy);
+
+    // ==========================================
+    // 1. FLOOR & ARCHITECTURAL TILES RENDERING
+    // ==========================================
+    const startCol = Math.max(0, Math.floor(Math.max(0, cx) / TILE_SIZE));
+    const endCol = Math.min(MAP_COLS, Math.ceil((Math.max(0, cx) + vw) / TILE_SIZE));
+    const startRow = Math.max(0, Math.floor(Math.max(0, cy) / TILE_SIZE));
+    const endRow = Math.min(MAP_ROWS, Math.ceil((Math.max(0, cy) + vh) / TILE_SIZE));
+
+    for (let c = startCol; c < endCol; c++) {
+      for (let r = startRow; r < endRow; r++) {
+        const tx = c * TILE_SIZE;
+        const ty = r * TILE_SIZE;
+
+        // Determine Wing / Sector Palette with subtle, elegant luxury architectural tones
+        const isNorthVault = r < 14 && c >= 24 && c <= 36;
+        const isBladePavilion = c < 24 && r < 20;
+        const isArcaneSanctum = c > 36 && r < 20;
+        const isShadowGallery = c < 24 && r >= 20;
+        const isAlchemyApothecary = c > 36 && r >= 20;
+        const isRotunda = c >= 22 && c <= 38 && r >= 14 && r <= 30;
+
+        const isAlt = (Math.floor(c / 2) + Math.floor(r / 2)) % 2 === 0;
+
+        if (isRotunda) {
+          ctx.fillStyle = isAlt ? '#1e2638' : '#171e2e';
+        } else if (isNorthVault) {
+          ctx.fillStyle = isAlt ? '#19122b' : '#110c20';
+        } else if (isBladePavilion) {
+          ctx.fillStyle = isAlt ? '#2a1414' : '#1e0c0c';
+        } else if (isArcaneSanctum) {
+          ctx.fillStyle = isAlt ? '#101c36' : '#0a1224';
+        } else if (isShadowGallery) {
+          ctx.fillStyle = isAlt ? '#0b241d' : '#071813';
+        } else if (isAlchemyApothecary) {
+          ctx.fillStyle = isAlt ? '#281a10' : '#1c1108';
+        } else {
+          ctx.fillStyle = isAlt ? '#1a2230' : '#121824';
+        }
+
+        ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
+        
+        // Soft architectural slab seam (rendered per 2x2 tile slab to avoid pixel noise)
+        if (c % 2 === 0 && r % 2 === 0) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(tx, ty, TILE_SIZE * 2, TILE_SIZE * 2);
+        }
+      }
+    }
+
+    // Grand Rotunda Golden Star Inlay Floor Decal
+    const rotundaCenterX = 30 * TILE_SIZE;
+    const rotundaCenterY = 22 * TILE_SIZE;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.15)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(rotundaCenterX, rotundaCenterY, 6 * TILE_SIZE, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.08)';
+    ctx.beginPath();
+    ctx.arc(rotundaCenterX, rotundaCenterY, 7.5 * TILE_SIZE, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // ==========================================
+    // 2. Y-SORTED DEPTH RENDERING QUEUE
+    // ==========================================
+    const renderQueue: { y: number; type: string; data: any }[] = [];
+
+    // Shelves
+    for (const s of SHELVES) {
+      renderQueue.push({ y: s.y + s.h, type: 'shelf', data: s });
+    }
+
+    // Decorations (Desks, Pillars, Fountains, Globes)
+    for (const d of DECORATIONS) {
+      if (d.type === 'fountain') continue;
+      renderQueue.push({ y: d.y + d.h, type: 'decoration', data: d });
+    }
+
+    // Ambient Studying NPCs
+    // for (const npc of AMBIENT_NPCS) {
+    //   renderQueue.push({ y: npc.y, type: 'ambient_npc', data: npc });
+    // }
+
+    // Story Interactables (NPCs, Books, Crystal Fountain)
+    for (const obj of this.interactables) {
+      if (obj.type === 'npc' || obj.id === 'monument_wisdom') continue;
+      renderQueue.push({ y: obj.y + obj.height, type: 'interactable', data: obj });
+    }
+
+    // Player
+    // renderQueue.push({ y: this.player.y, type: 'player', data: this.player });
+
+    // Sort by Y-coordinate for proper 2.5D isometric depth
+    renderQueue.sort((a, b) => a.y - b.y);
+
+    let nearestInteractable: Interactable | null = null;
+    let minInteractDist = 65;
+
+    for (const obj of this.interactables) {
+      const px = obj.x + obj.width / 2;
+      const py = obj.y + obj.height / 2;
+      const dist = Math.hypot(this.player.x - px, this.player.y - py);
+      if (dist < minInteractDist) {
+        nearestInteractable = obj;
+        minInteractDist = dist;
+      }
+    }
+
+    for (const item of renderQueue) {
+      if (item.type === 'shelf') {
+        drawTallGrandShelf(ctx, item.data);
+      } else if (item.type === 'decoration') {
+        drawDecoration(ctx, item.data, time);
+      } else if (item.type === 'ambient_npc') {
+        const npc = item.data;
+        drawUprightCharacter(ctx, npc.x, npc.y, npc.facing, false, time, 'ambient', '#475569', undefined, npc.type);
+      } else if (item.type === 'interactable') {
+        const obj = item.data;
+        const px = obj.x + obj.width / 2;
+        const py = obj.y + obj.height / 2;
+
+        if (obj.type === 'npc') {
+          drawUprightCharacter(ctx, px, py, 'down', false, time, 'npc', obj.color, obj.icon);
+
+          // Nameplate for VIP Characters
+          if (obj.name) {
+            ctx.save();
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+            const textWidth = ctx.measureText(obj.name).width;
+            ctx.beginPath();
+            ctx.roundRect(px - textWidth / 2 - 6, py - 46, textWidth + 12, 18, 4);
+            ctx.fill();
+            ctx.strokeStyle = obj.color;
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+            ctx.fillStyle = '#fbbf24';
+            ctx.fillText(obj.name, px, py - 33);
+            ctx.restore();
+          }
+        } else if (obj.type === 'book') {
+          drawFloatingBook(ctx, px, py, obj.color, time, obj.name);
+        }
+
+        // Active Interact Indicator if near
+        if (nearestInteractable === obj) {
+          ctx.save();
+          const bounce = Math.sin(time * 6) * 3;
+          const promptY = py - (obj.type === 'npc' ? 58 : 36) + bounce;
+          const promptText = this.language === 'ko' ? (obj.type === 'npc' ? '💬 [Space / Z] 대화' : '📖 [Space / Z] 읽기') : (obj.type === 'npc' ? '💬 [Space / Z] Talk' : '📖 [Space / Z] Read');
+
+          ctx.font = 'bold 11px sans-serif';
+          const pw = ctx.measureText(promptText).width;
+          ctx.fillStyle = 'rgba(217, 119, 6, 0.95)';
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(px - pw / 2 - 8, promptY - 14, pw + 16, 20, 5);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.fillText(promptText, px, promptY);
+          ctx.restore();
+        }
+      } else if (item.type === 'player') {
+        const p = item.data;
+        const isMoving = this.joystick.active || this.joystick.dx !== 0 || this.joystick.dy !== 0;
+        drawUprightCharacter(ctx, p.x, p.y, p.facing, isMoving, time, 'hero', p.color);
+
+        // Player Identifier Beacon
+        ctx.save();
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        const heroName = this.language === 'ko' ? '대사서' : 'Grand Librarian';
+        const nameW = ctx.measureText(heroName).width;
+        ctx.beginPath();
+        ctx.roundRect(p.x - nameW / 2 - 5, p.y - 44, nameW + 10, 16, 3);
+        ctx.fill();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillText(heroName, p.x, p.y - 32);
+        ctx.restore();
+      }
+    }
+
+    // ==========================================
+    // 3. PARTICLES & FLOATING GOLDEN DUST
+    // ==========================================
+    ctx.save();
+    for (const pt of this.particles) {
+      ctx.fillStyle = pt.color;
+      ctx.globalAlpha = pt.life / pt.maxLife;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Ambient floating golden library dust
+    for (const dust of this.ambientDust) {
+      ctx.fillStyle = 'rgba(251, 191, 36, ' + dust.alpha + ')';
+      ctx.beginPath();
+      ctx.arc(dust.x, dust.y, dust.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // ==========================================
+    // 4. VOLUMETRIC GODRAYS (STAINED GLASS SUNSHAFTS)
+    // ==========================================
+    ctx.save();
+    ctx.fillStyle = 'rgba(254, 240, 138, 0.05)';
+    for (let i = 0; i < 4; i++) {
+      const rayX = (i * 900 + 400 + Math.sin(time * 0.5 + i) * 50);
+      ctx.beginPath();
+      ctx.moveTo(rayX, 0);
+      ctx.lineTo(rayX + 260, 0);
+      ctx.lineTo(rayX + 100, MAP_HEIGHT);
+      ctx.lineTo(rayX - 160, MAP_HEIGHT);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.restore(); // Restore camera translation
+
+    // ==========================================
+    // 5. HD-2D DYNAMIC LIGHTING & ATMOSPHERE PASS (REMOVED)
+    // ==========================================
+    // The user requested uniform lighting and no dark vignette.
+    
+    // ==========================================
+    // 6. ZONE TITLE NOTIFICATION BANNER
+    // ==========================================
+    if (this.zoneBannerTimer > 0) {
+      const currentZoneObj = ZONES.find(z => z.id === this.currentZoneId) || ZONES[0];
+      const title = this.language === 'ko' ? currentZoneObj.nameKo : currentZoneObj.nameEn;
+      const subtitle = this.language === 'ko' ? currentZoneObj.descKo : currentZoneObj.descEn;
+
+      const bannerAlpha = Math.min(1.0, this.zoneBannerTimer);
+      ctx.save();
+      ctx.globalAlpha = bannerAlpha;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.strokeStyle = currentZoneObj.color;
+      ctx.lineWidth = 1.5;
+
+      const bannerW = Math.min(canvas.width - 40, 420);
+      const bannerH = 44;
+      const bx = (canvas.width - bannerW) / 2;
+      const by = 16;
+
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bannerW, bannerH, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Wing Color Indicator Dot
+      ctx.fillStyle = currentZoneObj.color;
+      ctx.beginPath();
+      ctx.arc(bx + 18, by + 22, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Title Text
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(title, bx + 32, by + 19);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(subtitle, bx + 32, by + 34);
+
+      ctx.restore();
+    }
+
+    // ==========================================
+    // 7. TOUCH / VIRTUAL JOYSTICK OVERLAYS
+    // ==========================================
+    if (this.phase !== 'dialogue') {
+      const t = TRANSLATIONS[this.language];
+
+      // Virtual Joystick Indicator
+      if (this.joystick.active) {
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.beginPath();
+        ctx.arc(this.joystick.startX, this.joystick.startY, 42, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.75)';
+        ctx.beginPath();
+        ctx.arc(this.joystick.currentX, this.joystick.currentY, 20, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Action Button
+      const btnRadius = 38;
+      const btnX = canvas.width - 64;
+      const btnY = canvas.height - 64;
+
+      ctx.fillStyle = this.actionBtn.active ? '#d97706' : '#2563eb';
+      ctx.beginPath();
+      ctx.arc(btnX, btnY, btnRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#60a5fa';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(t.canvas.interact, btnX, btnY);
+    }
+  };
+}

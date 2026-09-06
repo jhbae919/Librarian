@@ -1,0 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Nanum+Myeongjo:wght@700;800&display=swap');
+@import "tailwindcss";
+
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(28, 25, 23, 0.5); /* stone-900 */
+    border-radius: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(120, 113, 108, 0.5); /* stone-500 */
+    border-radius: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 162, 158, 0.8); /* stone-400 */
+  }
+
+  .custom-scrollbar-paper::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar-paper::-webkit-scrollbar-track {
+    background: #e8dcc4;
+    border-radius: 4px;
+  }
+  .custom-scrollbar-paper::-webkit-scrollbar-thumb {
+    background: #c8b592;
+    border-radius: 4px;
+  }
+  .custom-scrollbar-paper::-webkit-scrollbar-thumb:hover {
+    background: #a89572;
+  }
+
+  .font-magic {
+    font-family: 'Cinzel', 'Nanum Myeongjo', serif;
+  }
+  
+  .animate-magic-glow {
+    animation: magicGlow 2s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes magicGlow {
+  0% {
+    text-shadow: 0 0 5px rgba(251, 191, 36, 0.5), 0 2px 4px rgba(0,0,0,1);
+    filter: drop-shadow(0 0 3px rgba(251, 191, 36, 0.4)) drop-shadow(0 2px 2px rgba(0,0,0,1));
+  }
+  100% {
+    text-shadow: 0 0 15px rgba(251, 191, 36, 1), 0 0 30px rgba(217, 119, 6, 0.9), 0 2px 4px rgba(0,0,0,1);
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 1)) drop-shadow(0 2px 4px rgba(0,0,0,1));
+  }
+}

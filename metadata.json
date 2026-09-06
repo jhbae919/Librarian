@@ -1,0 +1,6 @@
+{
+  "name": "The Last Librarian",
+  "description": "A roguelike RPG where you play as a librarian preparing for the demon army invasion.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
